@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Crucible — eval and red-team harness for agents">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f17"/>
+      <stop offset="1" stop-color="#161b26"/>
+    </linearGradient>
+    <linearGradient id="heat" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#dc2626"/>
+      <stop offset="0.5" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f97316" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <rect width="1280" height="320" fill="url(#grid)"/>
+
+  <!-- crucible mark -->
+  <g transform="translate(150 160)">
+    <circle r="120" fill="url(#glow)"/>
+    <!-- trajectory dots falling into the vessel -->
+    <g fill="#fbbf24">
+      <circle cx="-34" cy="-92" r="4" opacity="0.5"/>
+      <circle cx="-14" cy="-74" r="5" opacity="0.7"/>
+      <circle cx="10" cy="-96" r="3" opacity="0.4"/>
+      <circle cx="26" cy="-70" r="4" opacity="0.65"/>
+      <circle cx="2" cy="-56" r="5" opacity="0.9"/>
+    </g>
+    <path d="M-34 -92 L-14 -74 L2 -56 M10 -96 L26 -70 L2 -56" fill="none" stroke="#fbbf24" stroke-opacity="0.35" stroke-width="1.5"/>
+    <!-- vessel -->
+    <path d="M-62 -38 H62 L48 52 Q46 66 32 66 H-32 Q-46 66 -48 52 Z" fill="none" stroke="url(#heat)" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M-70 -38 H70" stroke="#fbbf24" stroke-width="6" stroke-linecap="round"/>
+    <!-- molten level -->
+    <path d="M-53 8 Q-26 -2 0 8 T53 8 L47 52 Q45 63 33 63 H-33 Q-45 63 -47 52 Z" fill="url(#heat)" opacity="0.9"/>
+    <!-- check mark emerging -->
+    <path d="M-16 30 L-4 42 L20 18" fill="none" stroke="#0b0f17" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="320" y="150" font-size="88" font-weight="700" fill="#f8fafc" letter-spacing="-2">Crucible</text>
+    <text x="324" y="196" font-size="26" fill="#cbd5e1">Eval &amp; red-team harness for AI agents</text>
+    <g font-size="15" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" fill="#94a3b8">
+      <g transform="translate(324 236)">
+        <rect width="200" height="34" rx="17" fill="#ffffff" fill-opacity="0.05" stroke="#f97316" stroke-opacity="0.5"/>
+        <text x="100" y="22" text-anchor="middle">score trajectories</text>
+      </g>
+      <g transform="translate(538 236)">
+        <rect width="190" height="34" rx="17" fill="#ffffff" fill-opacity="0.05" stroke="#dc2626" stroke-opacity="0.55"/>
+        <text x="95" y="22" text-anchor="middle">attack on purpose</text>
+      </g>
+      <g transform="translate(742 236)">
+        <rect width="226" height="34" rx="17" fill="#ffffff" fill-opacity="0.05" stroke="#22c55e" stroke-opacity="0.5"/>
+        <text x="113" y="22" text-anchor="middle">fail PRs on regression</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- CI scatter motif, right side -->
+  <g transform="translate(1000 70)" opacity="0.9">
+    <line x1="0" y1="180" x2="230" y2="180" stroke="#334155" stroke-width="1.5"/>
+    <line x1="0" y1="0" x2="0" y2="180" stroke="#334155" stroke-width="1.5"/>
+    <g stroke-width="2.5" stroke-linecap="round">
+      <line x1="40" y1="60" x2="40" y2="120" stroke="#64748b"/>
+      <circle cx="40" cy="90" r="6" fill="#64748b"/>
+      <line x1="95" y1="44" x2="95" y2="96" stroke="#94a3b8"/>
+      <circle cx="95" cy="70" r="6" fill="#94a3b8"/>
+      <line x1="150" y1="98" x2="150" y2="150" stroke="#dc2626"/>
+      <circle cx="150" cy="124" r="6" fill="#dc2626"/>
+      <line x1="205" y1="22" x2="205" y2="62" stroke="#22c55e"/>
+      <circle cx="205" cy="42" r="6" fill="#22c55e"/>
+    </g>
+    <text x="115" y="206" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14" fill="#64748b">mean ± 95% CI</text>
+  </g>
+</svg>
