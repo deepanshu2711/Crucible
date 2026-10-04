@@ -54,6 +54,41 @@ def score(case, out):
     }
 
 
+def summarise(results):
+    ok = [r for r in results if "error" not in r]
+    n = len(ok)
+    if n == 0:
+        print("\nNo successful cases.")
+        return {"cases": len(results), "errors": len(results)}
+
+    def rate(pred):
+        return sum(1 for r in ok if pred(r)) / n
+
+    def avg(key):
+        vals = [r[key] for r in ok if r.get(key) is not None]
+        return sum(vals) / len(vals) if vals else 0
+
+    s = {
+        "cases": len(results),
+        "errors": len(results) - n,
+        "hit@5": rate(lambda r: r["rank"] is not None and r["rank"] <= 5),
+        "hit@all": rate(lambda r: r["rank"] is not None),
+        "answer_ok": rate(lambda r: r["answer_ok"]),
+        "avg_latency_s": avg("latency_s"),
+        "avg_tokens": avg("tokens"),
+    }
+    print(
+        f"\nHIT@5 {s['hit@5']:.2f}   HIT@ALL {s['hit@all']:.2f}   "
+        f"ANSWER {s['answer_ok']:.2f}"
+    )
+    print(
+        f"avg latency {s['avg_latency_s']:.0f}s   avg tokens {
+            s['avg_tokens']:.0f}   "
+        f"errors {s['errors']}"
+    )
+    return s
+
+
 def main():
     label = sys.argv[1] if len(sys.argv) > 1 else "no label"
     cases = load_cases(DATASET)
@@ -78,6 +113,9 @@ def main():
             results.append(r)
             f.write(json.dumps({"type": "case", **r}) + "\n")
             f.flush()
+
+        summary = summarise(results)
+        f.write(json.dumps({"type": "summary", **summary}) + "\n")
 
     print(f"\nSaved to {run_path}")
 
