@@ -1,12 +1,12 @@
 import json
 import os
 import time
-import sys
 import requests
+import argparse
+import re
 
 
-DATASET = "datasets/golden.jsonl"
-ATLAS_URL = "http://localhost:8080/api/v1/query"
+TARGETS = {"atlas": "http://localhost:8080/api/v1/query"}
 RUNS_DIR = "runs"
 TIMEOUT_S = 600
 
@@ -16,9 +16,9 @@ def load_cases(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def ask_atlas(case):
+def ask_atlas(case, url):
     body = {"document_id": case["document_id"], "query": case['question']}
-    resp = requests.post(ATLAS_URL, json=body, timeout=TIMEOUT_S)
+    resp = requests.post(url, json=body, timeout=TIMEOUT_S)
     resp.raise_for_status()
     return resp.json()
 
@@ -89,20 +89,38 @@ def summarise(results):
     return s
 
 
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "no-label"
+
+
+def parse_args():
+    p = argparse.ArgumentParser(prog="crucible")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    run = sub.add_parser("run")
+    run.add_argument("--dataset", default="golden")
+    run.add_argument("--target", default="atlas", choices=TARGETS)
+    run.add_argument("--label", default="no label")
+    return p.parse_args()
+
+
 def main():
-    label = sys.argv[1] if len(sys.argv) > 1 else "no label"
-    cases = load_cases(DATASET)
+    args = parse_args()
+    dataset = f"datasets/{args.dataset}.jsonl"
+    print(dataset)
+    url = TARGETS[args.target]
+    label = args.label
+    cases = load_cases(dataset)
     os.makedirs(RUNS_DIR, exist_ok=True)
     run_path = os.path.join(
-        RUNS_DIR, f"run_{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
+        RUNS_DIR, f"run_{time.strftime('%Y%m%d-%H%M%S')}_{slug(label)}.jsonl")
 
     with open(run_path, "w") as f:
         f.write(json.dumps(
-            {"type": "config", "label": label, "atlas_url": ATLAS_URL, "dataset": DATASET, "cases": len(cases)}) + "\n")
+            {"type": "config", "label": label, "atlas_url": url, "dataset": dataset, "cases": len(cases)}) + "\n")
         results = []
         for case in cases:
             try:
-                r = score(case, ask_atlas(case))
+                r = score(case, ask_atlas(case, url))
                 rank = r["rank"] if r["rank"] is not None else "-"
                 verdict = "OK   " if r["answer_ok"] else "wrong"
                 print(f"{case['id']}  rank {rank:>2} {verdict}")
