@@ -36,7 +36,7 @@ def answer_matches(answer, expected):
 
 def score(case, out):
     sources = out.get("sources", [])
-    trace = out.get("trace", [])
+    trace = out.get("trace") or {}
 
     return {
         "id": case["id"],

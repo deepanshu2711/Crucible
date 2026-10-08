@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="#roadmap"><img alt="Status: phase 0" src="https://img.shields.io/badge/status-phase%200-f97316?style=flat-square"></a>
+  <a href="#roadmap"><img alt="Status: phase 1" src="https://img.shields.io/badge/status-phase%201-f97316?style=flat-square"></a>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white">
   <a href="https://docs.astral.sh/uv/"><img alt="uv" src="https://img.shields.io/badge/managed%20with-uv-DE5FE9?style=flat-square"></a>
   <img alt="OpenTelemetry (planned)" src="https://img.shields.io/badge/tracing-OpenTelemetry-425CC7?style=flat-square&logo=opentelemetry&logoColor=white">
@@ -29,7 +29,7 @@
 ---
 
 > [!NOTE]
-> **Status: phase 0.** The golden dataset exists and a runner is being stubbed out. Everything under [Roadmap](#roadmap) beyond phase 0 is planned, not built. This README says so deliberately and will be updated as phases ship.
+> **Status: phase 0 complete, phase 1 next.** The golden dataset and a single-run runner against Atlas exist. Everything under [Roadmap](#roadmap) beyond phase 0 is planned, not built. This README says so deliberately and will be updated as phases ship.
 
 ## Why
 
@@ -51,8 +51,9 @@ Crucible is built around the problems that make this hard:
 
 | Path | What it is |
 | :-- | :-- |
-| [`datasets/golden.jsonl`](datasets/golden.jsonl) | 40 question/answer cases over NIST documents (Atlas golden set) |
-| [`main.py`](main.py) | Scratch runner: loads the dataset, no scoring yet |
+| [`datasets/golden.jsonl`](datasets/golden.jsonl) | 30 question/answer cases over NIST documents (Atlas golden set) |
+| [`main.py`](main.py) | Runner: queries Atlas per case, scores retrieval rank and answer match, writes `runs/run_<timestamp>_<label>.jsonl` with a summary |
+| [`runs/`](runs/) | Saved run results (config line, one line per case, summary line) |
 
 Each golden case looks like:
 
@@ -70,18 +71,17 @@ Requires **Python 3.12+** and [**uv**](https://docs.astral.sh/uv/).
 git clone https://github.com/deepanshu2711/Crucible.git
 cd Crucible
 uv sync            # creates .venv and installs dependencies
-uv run main.py
+uv run crucible run --dataset golden --target atlas --label baseline
 ```
 
-Phase 0 target command (not built yet, tracked in [#1](https://github.com/deepanshu2711/Crucible/issues/1)):
+Atlas must be reachable at `http://localhost:8080`. Each run prints hit@5, hit@all and answer match, and saves results to `runs/`.
 
-```bash
-crucible run --dataset golden --target atlas
-```
+> [!WARNING]
+> **Answer match is too strict.** It is a case-insensitive substring check of the expected answer, so a correct answer that reorders or rewords it (e.g. q001 listing the same four items in a different order) counts as wrong. Treat the answer score as a lower bound until it is replaced by a normalised metric or a calibrated judge (phase 3).
 
 ## Architecture
 
-> Target design. Only the dataset and a stub runner exist today.
+> Target design. Only the dataset and a single-run runner exist today.
 
 ```mermaid
 flowchart TB
@@ -186,7 +186,7 @@ Residual rates will be stated plainly. Nobody blocks all indirect injection toda
 
 | | Phase | Goal | Ships when | Tracking |
 | :-: | :-: | :-- | :-- | :-: |
-| 🚧 | **0** | One dataset, one metric, one target | `crucible run --dataset golden --target atlas` prints an exact-match number | [#1](https://github.com/deepanshu2711/Crucible/issues/1) |
+| ✅ | **0** | One dataset, one metric, one target | `crucible run --dataset golden --target atlas` prints an exact-match number | [#1](https://github.com/deepanshu2711/Crucible/issues/1) |
 | ⬜ | **1** | Repeats and bootstrap CIs | every metric reported as mean ± CI | [#3](https://github.com/deepanshu2711/Crucible/issues/3) |
 | ⬜ | **2** | OpenTelemetry tracing, trajectory metrics | trajectory scorecard next to answer quality | [#4](https://github.com/deepanshu2711/Crucible/issues/4) |
 | ⬜ | **3** | Calibrated judges | `docs/judge-calibration.md` with kappa scores | [#2](https://github.com/deepanshu2711/Crucible/issues/2) |
