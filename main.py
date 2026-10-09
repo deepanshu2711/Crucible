@@ -194,6 +194,30 @@ METRICS = {
     "tokens":    (lambda r: r.get("tokens"), "lower"),
 }
 BINARY = {"hit@5", "hit@all", "answer_ok"}
+SEGMENT_FIELDS = ("type", "difficulty")
+SEGMENT_METRICS = ("hit@5", "answer_ok", "tokens")
+
+
+def print_segments(config, ok):
+    """Per-segment CIs, so an aggregate can't hide one category collapsing."""
+    dataset = (config or {}).get("dataset")
+    if not dataset or not os.path.exists(dataset):
+        return
+    cases = {c["id"]: c for c in load_cases(dataset)}
+    for field in SEGMENT_FIELDS:
+        values = sorted({c[field] for c in cases.values() if field in c})
+        if not values:
+            continue
+        print(f"\nby {field:<22} {'cases':>5}  " +
+              "  ".join(f"{m:<20}" for m in SEGMENT_METRICS))
+        for val in values:
+            rows = [a for a in ok if cases.get(a["id"], {}).get(field) == val]
+            cells = []
+            for m in SEGMENT_METRICS:
+                s = stats.summarize(rows, METRICS[m][0])
+                cells.append(stats.fmt(s["mean"], s["lo"], s["hi"]) if s else "-")
+            n = len({a["id"] for a in rows})
+            print(f"   {val:<23} {n:>5}  " + "  ".join(f"{c:<20}" for c in cells))
 
 
 def print_report(path):
@@ -229,6 +253,8 @@ def print_report(path):
     if n_cases < 30:
         print(f"\nnote: only {
               n_cases} cases — intervals will be wide and somewhat unreliable")
+
+    print_segments(config, ok)
 
     for name in ("answer_ok", "hit@5"):
         flaky = stats.flaky_cases(ok, METRICS[name][0])

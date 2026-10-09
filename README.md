@@ -29,7 +29,7 @@
 ---
 
 > [!NOTE]
-> **Status: phase 1 in progress.** Repeats, bootstrap CIs, `report` and `compare` are built. Quality and token metrics pass the stability check, but latency doesn't yet because of Ollama's prompt cache (see [`docs/phase1-findings.md`](docs/phase1-findings.md)). Everything under [Roadmap](#roadmap) beyond phase 1 is planned, not built. This README says so deliberately and will be updated as phases ship.
+> **Status: phase 1 complete, phase 2 next.** Repeats, bootstrap CIs, `report` and `compare` are built, and quality and token metrics pass the stability check. Latency is recorded but not yet trustworthy because of Ollama's prompt cache, so it is excluded for now (see [`docs/phase1-findings.md`](docs/phase1-findings.md)). Everything under [Roadmap](#roadmap) beyond phase 1 is planned, not built. This README says so deliberately and will be updated as phases ship.
 
 ## Why
 
@@ -192,7 +192,7 @@ Residual rates will be stated plainly. Nobody blocks all indirect injection toda
 | | Phase | Goal | Ships when | Tracking |
 | :-: | :-: | :-- | :-- | :-: |
 | ✅ | **0** | One dataset, one metric, one target | `crucible run --dataset golden --target atlas` prints an exact-match number | [#1](https://github.com/deepanshu2711/Crucible/issues/1) |
-| 🚧 | **1** | Repeats and bootstrap CIs | every metric reported as mean ± CI | [#3](https://github.com/deepanshu2711/Crucible/issues/3) |
+| ✅ | **1** | Repeats and bootstrap CIs | every metric reported as mean ± CI | [#3](https://github.com/deepanshu2711/Crucible/issues/3) |
 | ⬜ | **2** | OpenTelemetry tracing, trajectory metrics | trajectory scorecard next to answer quality | [#4](https://github.com/deepanshu2711/Crucible/issues/4) |
 | ⬜ | **3** | Calibrated judges | `docs/judge-calibration.md` with kappa scores | [#2](https://github.com/deepanshu2711/Crucible/issues/2) |
 | ⬜ | **4** | CI gate | a PR that fails on a deliberately-worse prompt | [#5](https://github.com/deepanshu2711/Crucible/issues/5) |
