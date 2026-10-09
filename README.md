@@ -52,8 +52,10 @@ Crucible is built around the problems that make this hard:
 | Path | What it is |
 | :-- | :-- |
 | [`datasets/golden.jsonl`](datasets/golden.jsonl) | 30 question/answer cases over NIST documents (Atlas golden set) |
-| [`main.py`](main.py) | Runner: queries Atlas per case, scores retrieval rank and answer match, writes `runs/run_<timestamp>_<label>.jsonl` with a summary |
-| [`runs/`](runs/) | Saved run results (config line, one line per case, summary line) |
+| [`main.py`](main.py) | CLI: `run` (n repeats per case, concurrency, warm-up, resume), `report` and `compare` |
+| [`stats.py`](stats.py) | Case-level bootstrap CIs, paired diffs, within-case variance, flaky-case detection |
+| [`runs/`](runs/) | Saved run results (config line, then one line per attempt) |
+| [`docs/phase1-findings.md`](docs/phase1-findings.md) | Phase 1 results: baseline with CIs, flaky cases, stability check, old claims re-examined |
 
 Each golden case looks like:
 
@@ -71,17 +73,20 @@ Requires **Python 3.12+** and [**uv**](https://docs.astral.sh/uv/).
 git clone https://github.com/deepanshu2711/Crucible.git
 cd Crucible
 uv sync            # creates .venv and installs dependencies
-uv run crucible run --dataset golden --target atlas --label baseline
+uv run crucible run --label baseline --repeats 2 \
+    --target-config retrieval_mode=hybrid_graph     # record the target's settings
+uv run crucible report runs/<run>.jsonl
+uv run crucible compare runs/<baseline>.jsonl runs/<candidate>.jsonl
 ```
 
-Atlas must be reachable at `http://localhost:8080`. Each run prints hit@5, hit@all and answer match, and saves results to `runs/`.
+Atlas must be reachable at `http://localhost:8080`. Every metric (hit@5, hit@all, answer match, latency, tokens) is printed as mean with a bootstrap 95% CI over cases. `compare` pairs the runs case by case and gives each metric a verdict: no detectable change, real but too small to matter, improved, or regressed. Two untimed warm-up queries go out before each run (`--warmup`) so a cold model doesn't inflate latency, and an interrupted run continues with `run --resume <file>`.
 
 > [!WARNING]
 > **Answer match is too strict.** It is a case-insensitive substring check of the expected answer, so a correct answer that reorders or rewords it (e.g. q001 listing the same four items in a different order) counts as wrong. Treat the answer score as a lower bound until it is replaced by a normalised metric or a calibrated judge (phase 3).
 
 ## Architecture
 
-> Target design. Only the dataset and a single-run runner exist today.
+> Target design. Only the dataset, the repeat runner and the CI aggregator exist today.
 
 ```mermaid
 flowchart TB

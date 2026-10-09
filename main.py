@@ -53,6 +53,7 @@ def score(case, out):
         "latency_s": trace.get("latency_s"),
         "tokens": (trace.get("input_tokens") or 0) + (trace.get("output_tokens") or 0),
         "llm_calls": trace.get("llm_calls"),
+        "mode": trace.get("mode"),
     }
 
 
@@ -91,6 +92,28 @@ def run_one(case, repeat_idx, url):
     return row
 
 
+def parse_target_config(pairs):
+    """--target-config retrieval_mode=hybrid_graph -> {"retrieval_mode": "hybrid_graph"}"""
+    out = {}
+    for p in pairs or []:
+        key, sep, val = p.partition("=")
+        if not sep or not key:
+            raise SystemExit(f"--target-config expects key=value, got {p!r}")
+        out[key.strip()] = val.strip()
+    return out
+
+
+def warm_up(cases, url, n):
+    """Send n untimed queries first so a cold model doesn't inflate latency."""
+    for c in cases[:n]:
+        t0 = time.time()
+        try:
+            ask_atlas(c, url)
+            print(f"warm-up {c['id']}  {time.time() - t0:.1f}s")
+        except Exception as e:
+            print(f"warm-up {c['id']}  failed: {type(e).__name__}: {e}")
+
+
 def cmd_run(args):
     if args.resume:
         run_path = args.resume
@@ -112,6 +135,8 @@ def cmd_run(args):
             "cases": len(cases),
             "repeats": args.repeats,
             "concurrency": args.concurrency,
+            "warmup": args.warmup,
+            "target_config": parse_target_config(args.target_config),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         os.makedirs(RUNS_DIR, exist_ok=True)
@@ -129,6 +154,8 @@ def cmd_run(args):
         if (c["id"], r) not in done
     ]
 
+    if jobs:
+        warm_up(cases, config["atlas_url"], args.warmup)
     random.shuffle(jobs)
     print(f"{run_path}\n{len(cases)} cases x {config['repeats']} repeats, "
           f"{len(done)} done, {len(jobs)} to go\n")
@@ -242,17 +269,22 @@ def cmd_compare(args):
     la = (cfg_a or {}).get("label", "?")
     lb = (cfg_b or {}).get("label", "?")
     print(f"baseline  {os.path.basename(args.baseline)}  ({la})")
-    print(f"candidate {os.path.basename(args.candidate)}  ({lb})\n")
-    print(f"{'metric':<11} {'base':>8} {'cand':>8}   {
-          'diff [95% CI]':<28} {'cases':>5}  verdict")
+    print(f"candidate {os.path.basename(args.candidate)}  ({lb})")
+    tc_a = (cfg_a or {}).get("target_config")
+    tc_b = (cfg_b or {}).get("target_config")
+    if tc_a or tc_b:
+        print(f"  base config: {tc_a or 'not recorded'}")
+        print(f"  cand config: {tc_b or 'not recorded'}")
+    print(f"\n{'metric':<11} {'base [95% CI]':<22} {'cand [95% CI]':<22} "
+          f"{'diff [95% CI]':<26} {'cases':>5}  verdict")
 
     for name, (fn, better) in METRICS.items():
         d = stats.paired_diff(ok_a, ok_b, fn)
         if d is None:
             continue
         v = verdict(d, better, name in BINARY, args.min_effect, args.min_rel)
-        print(f"{name:<11} {d['base_mean']:>8.2f} {d['cand_mean']:>8.2f}   "
-              f"{stats.fmt(d['mean'], d['lo'], d['hi'], signed=True):<28} "
+        print(f"{name:<11} {stats.fmt(*d['base_ci']):<22} {stats.fmt(*d['cand_ci']):<22} "
+              f"{stats.fmt(d['mean'], d['lo'], d['hi'], signed=True):<26} "
               f"{d['n']:>5}  {v}")
 
 
@@ -271,6 +303,11 @@ def parse_args():
     run.add_argument("--repeats", type=int, default=2)
     run.add_argument("--concurrency", type=int, default=1)
     run.add_argument("--resume", help="path of a run file to continue")
+    run.add_argument("--warmup", type=int, default=2,
+                     help="untimed queries sent before the run starts")
+    run.add_argument("--target-config", action="append", metavar="KEY=VALUE",
+                     help="target settings to record in the run, e.g. "
+                          "retrieval_mode=hybrid_graph (repeatable)")
 
     rep = sub.add_parser("report")
     rep.add_argument("run", help="path of a run file")

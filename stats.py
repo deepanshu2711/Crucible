@@ -62,13 +62,17 @@ def paired_diff(attempts_a, attempts_b, fn):
         return None
     diffs = [b[k] - a[k] for k in common]
     mean, lo, hi = bootstrap_ci(diffs)
+    base = bootstrap_ci([a[k] for k in common])
+    cand = bootstrap_ci([b[k] for k in common])
     return {
         "mean": mean,
         "lo": lo,
         "hi": hi,
         "n": len(common),
-        "base_mean": float(np.mean([a[k] for k in common])),
-        "cand_mean": float(np.mean([b[k] for k in common])),
+        "base_mean": base[0],
+        "cand_mean": cand[0],
+        "base_ci": base,
+        "cand_ci": cand,
     }
 
 
