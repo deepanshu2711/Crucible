@@ -6,6 +6,7 @@ import argparse
 import re
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import stats
 
 TARGETS = {"atlas": "http://localhost:8080/api/v1/query"}
 RUNS_DIR = "runs"
@@ -55,41 +56,6 @@ def score(case, out):
     }
 
 
-def summarise(results):
-    ok = [r for r in results if "error" not in r]
-    n = len(ok)
-    if n == 0:
-        print("\nNo successful cases.")
-        return {"cases": len(results), "errors": len(results)}
-
-    def rate(pred):
-        return sum(1 for r in ok if pred(r)) / n
-
-    def avg(key):
-        vals = [r[key] for r in ok if r.get(key) is not None]
-        return sum(vals) / len(vals) if vals else 0
-
-    s = {
-        "cases": len(results),
-        "errors": len(results) - n,
-        "hit@5": rate(lambda r: r["rank"] is not None and r["rank"] <= 5),
-        "hit@all": rate(lambda r: r["rank"] is not None),
-        "answer_ok": rate(lambda r: r["answer_ok"]),
-        "avg_latency_s": avg("latency_s"),
-        "avg_tokens": avg("tokens"),
-    }
-    print(
-        f"\nHIT@5 {s['hit@5']:.2f}   HIT@ALL {s['hit@all']:.2f}   "
-        f"ANSWER {s['answer_ok']:.2f}"
-    )
-    print(
-        f"avg latency {s['avg_latency_s']:.0f}s   avg tokens {
-            s['avg_tokens']:.0f}   "
-        f"errors {s['errors']}"
-    )
-    return s
-
-
 def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "no-label"
 
@@ -105,7 +71,7 @@ def load_run(path):
             kind = row.get("type")
             if kind == "config":
                 config = row
-            elif kind in ("case"):
+            elif kind == "case":
                 row.setdefault("repeat_idx", 0)
                 row.setdefault("error", None)
                 attempts.append(row)
@@ -114,12 +80,20 @@ def load_run(path):
 
 
 def run_one(case, repeat_idx, url):
-    return
+    row = {"id": case["id"], "repeat_idx": repeat_idx}
+    t0 = time.time()
+    try:
+        row.update(score(case, ask_atlas(case, url)))
+        row["error"] = None
+    except Exception as e:
+        row["error"] = f"{type(e).__name__}:{e}"
+    row["wall_s"] = round(time.time() - t0, 2)
+    return row
 
 
 def cmd_run(args):
     if args.resume:
-        run_path = args.run_path
+        run_path = args.resume
         config, attempts = load_run(run_path)
         if config is None:
             raise SystemExit(f"{run_path} has no config line; can't resume it")
@@ -148,29 +122,138 @@ def cmd_run(args):
             f.write(json.dumps(config) + "\n")
         done = set()
 
-        jobs = [
-            (c, r)
-            for c in cases
-            for r in range(config["repeats"])
-            if (c["id"], r) not in done
-        ]
+    jobs = [
+        (c, r)
+        for c in cases
+        for r in range(config["repeats"])
+        if (c["id"], r) not in done
+    ]
 
-        random.shuffle(jobs)
-        print(f"{run_path}\n{len(cases)} cases x {config['repeats']} repeats, "
-              f"{len(done)} done, {len(jobs)} to go\n")
-        pool = ThreadPoolExecutor(max_workers=config.get("concurrency", 1))
-        futures = [
-            pool.submit(run_one, c, r, config["atlas_url"])
-            for c, r in jobs
-        ]
+    random.shuffle(jobs)
+    print(f"{run_path}\n{len(cases)} cases x {config['repeats']} repeats, "
+          f"{len(done)} done, {len(jobs)} to go\n")
+    pool = ThreadPoolExecutor(max_workers=config.get("concurrency", 1))
+    futures = [
+        pool.submit(run_one, c, r, config["atlas_url"])
+        for c, r in jobs
+    ]
+    try:
+        with open(run_path, "a") as f:
+            for i, fut in enumerate(as_completed(futures), 1):
+                r = fut.result()
+                f.write(json.dumps({"type": "case", **r}) + "\n")
+                f.flush()
+
+                if r["error"]:
+                    status = f"ERROR {r['error'][:70]}"
+                else:
+                    rank = r["rank"] if r["rank"] is not None else "-"
+                    ok = "OK   " if r["answer_ok"] else "wrong"
+                    status = f"rank {rank:>2}  {ok}"
+                print(f"[{i:>3}/{len(jobs)}] {r['id']} r{r['repeat_idx']}  {status}")
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        print(f"\nInterrupted. Resume with:\n  crucible run --resume {run_path}")
+        raise SystemExit(1)
+    pool.shutdown()
+    print_report(run_path)
 
 
-def cmd_report():
-    return
+METRICS = {
+    "hit@5":     (lambda r: float(r["rank"] is not None and r["rank"] <= 5), "higher"),
+    "hit@all":   (lambda r: float(r["rank"] is not None), "higher"),
+    "answer_ok": (lambda r: float(r["answer_ok"]), "higher"),
+    "latency_s": (lambda r: r.get("latency_s"), "lower"),
+    "tokens":    (lambda r: r.get("tokens"), "lower"),
+}
+BINARY = {"hit@5", "hit@all", "answer_ok"}
 
 
-def cmd_compare():
-    return
+def print_report(path):
+    config, attempts = load_run(path=path)
+    ok = [a for a in attempts if a['error'] is None]
+    n_err = len(attempts) - len(ok)
+    label = (config or {}).get("label", "?")
+    print(f"\n{os.path.basename(path)}   label: {label}")
+
+    if not attempts:
+        print("no attempts")
+        return
+    print(f"attempts {len(attempts)}   ok {len(ok)}   "
+          f"errors {n_err} ({n_err / len(attempts):.0%})")
+
+    if not ok:
+        return
+
+    print(f"\n{'metric':<11} {'mean [95% CI]':<26} {
+          'cases x reps':<14} within-case std")
+
+    for name, (fn, _) in METRICS.items():
+        s = stats.summarize(ok, fn=fn)
+        if s is None:
+            continue
+        reps = s["n_attempts"] / s["n_cases"]
+        wstd = "-" if s["within_std"] != s["within_std"] else f"{
+            s['within_std']:.3f}"
+        print(f"{name:<11} {stats.fmt(s['mean'], s['lo'], s['hi']):<26} "
+              f"{s['n_cases']} x {reps:<9.1f} {wstd}")
+
+    n_cases = len({a["id"] for a in ok})
+    if n_cases < 30:
+        print(f"\nnote: only {
+              n_cases} cases — intervals will be wide and somewhat unreliable")
+
+    for name in ("answer_ok", "hit@5"):
+        flaky = stats.flaky_cases(ok, METRICS[name][0])
+        if flaky:
+            print(f"\nflaky on {name} ({len(flaky)} cases):")
+            for cid, passes, total in flaky:
+                print(f"  {cid:<12} {passes}/{total}")
+
+
+def cmd_report(args):
+    print_report(args.run)
+
+
+def verdict(d, better, binary, min_effect, min_rel):
+    if d["lo"] <= 0 <= d["hi"]:
+        return "no detectable change"
+    if binary:
+        size, threshold = abs(d["mean"]), min_effect
+    else:
+        size = abs(d["mean"]) / abs(d["base_mean"]
+                                    ) if d["base_mean"] else float("inf")
+        threshold = min_rel
+    if size < threshold:
+        return "real but too small to matter"
+    went_up = d["mean"] > 0
+    good = went_up if better == "higher" else not went_up
+    return "IMPROVED" if good else "REGRESSED"
+
+
+def cmd_compare(args):
+    cfg_a, att_a = load_run(args.baseline)
+    cfg_b, att_b = load_run(args.candidate)
+    if cfg_a and cfg_b and cfg_a.get("dataset") != cfg_b.get("dataset"):
+        print("WARNING: runs used different datasets; only shared case ids are compared")
+
+    ok_a = [a for a in att_a if a["error"] is None]
+    ok_b = [a for a in att_b if a["error"] is None]
+    la = (cfg_a or {}).get("label", "?")
+    lb = (cfg_b or {}).get("label", "?")
+    print(f"baseline  {os.path.basename(args.baseline)}  ({la})")
+    print(f"candidate {os.path.basename(args.candidate)}  ({lb})\n")
+    print(f"{'metric':<11} {'base':>8} {'cand':>8}   {
+          'diff [95% CI]':<28} {'cases':>5}  verdict")
+
+    for name, (fn, better) in METRICS.items():
+        d = stats.paired_diff(ok_a, ok_b, fn)
+        if d is None:
+            continue
+        v = verdict(d, better, name in BINARY, args.min_effect, args.min_rel)
+        print(f"{name:<11} {d['base_mean']:>8.2f} {d['cand_mean']:>8.2f}   "
+              f"{stats.fmt(d['mean'], d['lo'], d['hi'], signed=True):<28} "
+              f"{d['n']:>5}  {v}")
 
 
 def parse_args():
@@ -203,43 +286,12 @@ def parse_args():
     return p.parse_args()
 
 
-conmmands = {"run": cmd_run, "report": cmd_report, "compare": cmd_compare}
+commands = {"run": cmd_run, "report": cmd_report, "compare": cmd_compare}
 
 
 def main():
     args = parse_args()
-    conmmands[args.cmd](args)
-    # dataset = f"datasets/{args.dataset}.jsonl"
-    # print(dataset)
-    # url = TARGETS[args.target]
-    # label = args.label
-    # cases = load_cases(dataset)
-    # os.makedirs(RUNS_DIR, exist_ok=True)
-    # run_path = os.path.join(
-    #     RUNS_DIR, f"run_{time.strftime('%Y%m%d-%H%M%S')}_{slug(label)}.jsonl")
-    #
-    # with open(run_path, "w") as f:
-    #     f.write(json.dumps(
-    #         {"type": "config", "label": label, "atlas_url": url, "dataset": dataset, "cases": len(cases)}) + "\n")
-    #     results = []
-    #     for case in cases:
-    #         try:
-    #             r = score(case, ask_atlas(case, url))
-    #             rank = r["rank"] if r["rank"] is not None else "-"
-    #             verdict = "OK   " if r["answer_ok"] else "wrong"
-    #             print(f"{case['id']}  rank {rank:>2} {verdict}")
-    #         except Exception as e:
-    #             r = {"id": case["id"], "error": str(e)}
-    #             print(f"{case['id']}  ERROR  {e}")
-    #
-    #         results.append(r)
-    #         f.write(json.dumps({"type": "case", **r}) + "\n")
-    #         f.flush()
-    #
-    #     summary = summarise(results)
-    #     f.write(json.dumps({"type": "summary", **summary}) + "\n")
-    #
-    # print(f"\nSaved to {run_path}")
+    commands[args.cmd](args)
 
 
 if __name__ == "__main__":
