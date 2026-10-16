@@ -1,0 +1,1 @@
+{"trace_id": "afe3eee6934d85c45f61a4b8b6b5e0e3", "span_id": "c53f2a41fad73c13", "parent_id": null, "name": "crucible.case", "service": "crucible", "start_ns": 1792158578081764211, "end_ns": 1792158582143407221, "status": "UNSET", "attributes": {"crucible.case_id": "q023", "crucible.repeat": 1, "crucible.label": "hybrid", "langfuse.session.id": "hybrid"}}

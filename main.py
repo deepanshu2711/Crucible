@@ -1,12 +1,19 @@
 import json
 import os
 import time
+from opentelemetry import trace
 import requests
 import argparse
 import re
 import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import stats
+import telemetry
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from opentelemetry.propagate import inject
+
+
+telemetry.setup_tracing("crucible")
+tracer = trace.get_tracer("crucible")
 
 TARGETS = {"atlas": "http://localhost:8080/api/v1/query"}
 RUNS_DIR = "runs"
@@ -20,7 +27,9 @@ def load_cases(path):
 
 def ask_atlas(case, url):
     body = {"document_id": case["document_id"], "query": case['question']}
-    resp = requests.post(url, json=body, timeout=TIMEOUT_S)
+    headers = {}
+    inject(headers)
+    resp = requests.post(url, json=body, headers=headers, timeout=TIMEOUT_S)
     resp.raise_for_status()
     return resp.json()
 
@@ -80,14 +89,21 @@ def load_run(path):
     return config, attempts
 
 
-def run_one(case, repeat_idx, url):
+def run_one(case, repeat_idx, config):
     row = {"id": case["id"], "repeat_idx": repeat_idx}
     t0 = time.time()
-    try:
-        row.update(score(case, ask_atlas(case, url)))
-        row["error"] = None
-    except Exception as e:
-        row["error"] = f"{type(e).__name__}:{e}"
+    with tracer.start_as_current_span("crucible.case") as span:
+        span.set_attribute("crucible.case_id", case["id"])
+        span.set_attribute("crucible.repeat", repeat_idx)
+        span.set_attribute("crucible.label", config["label"])
+        span.set_attribute("langfuse.session.id", config["label"])
+        row["trace_id"] = trace.format_trace_id(
+            span.get_span_context().trace_id)
+        try:
+            row.update(score(case, ask_atlas(case, config['atlas_url'])))
+            row["error"] = None
+        except Exception as e:
+            row["error"] = f"{type(e).__name__}:{e}"
     row["wall_s"] = round(time.time() - t0, 2)
     return row
 
@@ -161,7 +177,7 @@ def cmd_run(args):
           f"{len(done)} done, {len(jobs)} to go\n")
     pool = ThreadPoolExecutor(max_workers=config.get("concurrency", 1))
     futures = [
-        pool.submit(run_one, c, r, config["atlas_url"])
+        pool.submit(run_one, c, r, config)
         for c, r in jobs
     ]
     try:
@@ -177,10 +193,12 @@ def cmd_run(args):
                     rank = r["rank"] if r["rank"] is not None else "-"
                     ok = "OK   " if r["answer_ok"] else "wrong"
                     status = f"rank {rank:>2}  {ok}"
-                print(f"[{i:>3}/{len(jobs)}] {r['id']} r{r['repeat_idx']}  {status}")
+                print(f"[{i:>3}/{len(jobs)}] {r['id']
+                                              } r{r['repeat_idx']}  {status}")
     except KeyboardInterrupt:
         pool.shutdown(wait=False, cancel_futures=True)
-        print(f"\nInterrupted. Resume with:\n  crucible run --resume {run_path}")
+        print(
+            f"\nInterrupted. Resume with:\n  crucible run --resume {run_path}")
         raise SystemExit(1)
     pool.shutdown()
     print_report(run_path)
@@ -215,9 +233,11 @@ def print_segments(config, ok):
             cells = []
             for m in SEGMENT_METRICS:
                 s = stats.summarize(rows, METRICS[m][0])
-                cells.append(stats.fmt(s["mean"], s["lo"], s["hi"]) if s else "-")
+                cells.append(
+                    stats.fmt(s["mean"], s["lo"], s["hi"]) if s else "-")
             n = len({a["id"] for a in rows})
-            print(f"   {val:<23} {n:>5}  " + "  ".join(f"{c:<20}" for c in cells))
+            print(f"   {val:<23} {n:>5}  " +
+                  "  ".join(f"{c:<20}" for c in cells))
 
 
 def print_report(path):
